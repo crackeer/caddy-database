@@ -1,6 +1,12 @@
 ## Requirement
 - [Go Installed](https://golang.org/doc/install)
 
+## Development
+
+```sh
+xcaddy run --config ./caddy.json
+```
+
 ## Install
 refer to [Extending Caddy](https://caddyserver.com/docs/extending-caddy)
 1. **Install [xcaddy](https://github.com/caddyserver/xcaddy)**

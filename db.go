@@ -12,11 +12,20 @@ import (
 )
 
 const (
-	actionSelect string = "select"
+	actionSelect          string = "select"
+	actionCount           string = "count"
+	actionDistinct        string = "distinct"
+	actionShowCreateTable string = "show_create_table"
+	actionDesc            string = "desc"
+
+	actionCreate string = "create"
+	actionInsert string = "insert"
 	actionUpdate string = "update"
 	actionDelete string = "delete"
-	actionDrop   string = "drop"
-	actionExec   string = "exec"
+
+	actionShowTables string = "show_tables"
+
+	actionDrop string = "drop"
 )
 
 // Request
@@ -30,11 +39,12 @@ type Request struct {
 
 // SelectBody
 type SelectBody struct {
-	Query   map[string]interface{} `json:"query"`
-	Fields  []string               `json:"fields"`
-	OrderBy []string               `json:"order_by"`
-	Limit   int                    `json:"limit"`
-	Offset  int                    `json:"offset"`
+	Query    map[string]interface{} `json:"query"`
+	Fields   []string               `json:"fields"`
+	OrderBy  []string               `json:"order_by"`
+	Limit    int                    `json:"limit"`
+	Offset   int                    `json:"offset"`
+	Distinct []string               `json:"distinct"`
 }
 
 func parseRequest(r *http.Request) (*Request, error) {
@@ -45,7 +55,7 @@ func parseRequest(r *http.Request) (*Request, error) {
 	parts := strings.Split(path, "/")
 	action := parts[0]
 
-	if action != actionExec && len(parts) < 2 {
+	if len(parts) < 2 {
 		return nil, errors.New("nil table")
 	}
 
@@ -76,6 +86,26 @@ func (req *Request) UseDB(db *gorm.DB) *Request {
 func (req *Request) Handle() (interface{}, error) {
 	if req.Action == actionSelect {
 		return req.Select()
+	}
+
+	if req.Action == actionCount {
+		return req.Count()
+	}
+
+	if req.Action == actionDistinct {
+		return req.Distinct()
+	}
+
+	if req.Action == actionShowCreateTable {
+		return req.ShowCreateTable()
+	}
+
+	if req.Action == actionDesc {
+		return req.Desc()
+	}
+
+	if req.Action == actionShowTables {
+		return req.ShowTables()
 	}
 
 	return nil, nil
@@ -124,4 +154,121 @@ func (req *Request) Select() (interface{}, error) {
 	}
 
 	return list, nil
+}
+
+// Select
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Count() (interface{}, error) {
+	selectBody := &SelectBody{}
+	if err := req.decodeBody(selectBody); err != nil {
+		return nil, fmt.Errorf("decode select body error:%s", err.Error())
+	}
+
+	db := req.DB.Table(req.Table)
+	if len(selectBody.Query) > 0 {
+		sql, params := BuildQuery(selectBody.Query)
+		db = db.Where(sql, params...)
+	}
+
+	var count int64
+	if len(selectBody.Distinct) > 0 {
+		db = db.Distinct(selectBody.Distinct[0])
+	}
+
+	if err := db.Count(&count).Error; err != nil {
+		return nil, fmt.Errorf("count error:%s", err.Error())
+	}
+
+	return count, nil
+}
+
+// Distinct
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Distinct() (interface{}, error) {
+	selectBody := &SelectBody{}
+	if err := req.decodeBody(selectBody); err != nil {
+		return nil, fmt.Errorf("decode select body error:%s", err.Error())
+	}
+
+	if len(selectBody.Distinct) < 1 {
+		return nil, fmt.Errorf("distinct colum nil")
+	}
+
+	db := req.DB.Table(req.Table)
+	if len(selectBody.Query) > 0 {
+		sql, params := BuildQuery(selectBody.Query)
+		db = db.Where(sql, params...)
+	}
+
+	db = db.Distinct(selectBody.Distinct[0])
+
+	list := []string{}
+
+	if err := db.Pluck(selectBody.Distinct[0], &list).Error; err != nil {
+		return nil, fmt.Errorf("count error:%s", err.Error())
+	}
+
+	return list, nil
+}
+
+// Show
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) ShowCreateTable() (interface{}, error) {
+	data := map[string]interface{}{}
+
+	if err := req.DB.Raw("show create table " + req.Table).Scan(&data).Error; err != nil {
+		return nil, err
+	}
+	if value, ok := data["Create Table"]; ok {
+		if stringValue, ok := value.(string); ok {
+			return stringValue, nil
+		}
+	}
+
+	return "", nil
+}
+
+// Desc
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Desc() (interface{}, error) {
+	list := []map[string]interface{}{}
+
+	if err := req.DB.Raw("desc " + req.Table).Find(&list).Error; err != nil {
+		return nil, err
+	}
+
+	return list, nil
+}
+
+// ShowTables
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) ShowTables() (interface{}, error) {
+	data := []map[string]interface{}{}
+
+	if err := req.DB.Raw("show tables").Scan(&data).Error; err != nil {
+		return nil, err
+	}
+	retData := []string{}
+	for _, value := range data {
+		for _, value := range value {
+			retData = append(retData, value.(string))
+		}
+	}
+
+	return retData, nil
 }

@@ -2,10 +2,7 @@
     "admin": {
         "disabled": false,
         "listen": "0.0.0.0:2019",
-        "enforce_origin": false,
-        "origins": [
-            ""
-        ]
+        "enforce_origin": false
     },
     "apps": {
         "http": {
