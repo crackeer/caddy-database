@@ -1,0 +1,45 @@
+{
+    "admin": {
+        "disabled": false,
+        "listen": "0.0.0.0:2019",
+        "enforce_origin": false,
+        "origins": [
+            ""
+        ]
+    },
+    "apps": {
+        "http": {
+            "servers": {
+                "static": {
+                    "idle_timeout": 30000000000,
+                    "listen": [
+                        "0.0.0.0:8080"
+                    ],
+                    "max_header_bytes": 10240000,
+                    "read_header_timeout": 10000000000,
+                    "routes": [
+                        {
+                            "match": [
+                                {
+                                    "header": {
+                                        "proxy": [
+                                            "database"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "handle": [
+                                {
+                                    "handler": "database",
+                                    "driver": "mysql",
+                                    "dsn": "USER:PASSWORD@tcp(HOST:PORT)/DATABASE?charset=utf8mb4&parseTime=True&loc=Local"
+                                }
+                            ],
+                            "terminal": true
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}
