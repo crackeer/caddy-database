@@ -1,4 +1,4 @@
-module github.com/crackeer/caddy-upload2dir
+module github.com/crackeer/caddy-database
 
 go 1.19
 

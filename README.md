@@ -18,7 +18,7 @@ go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 2. **Build A New Caddy Binary**
 
 ```sh
-xcaddy build master --with=github.com/crackeer/caddy-upload2dir
+xcaddy build master --with github.com/crackeer/caddy-database
 ```
 
 3. **copy new template.html**
