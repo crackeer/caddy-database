@@ -34,7 +34,8 @@ type Request struct {
 	Table  string
 	Body   []byte
 
-	DB *gorm.DB
+	DB     *gorm.DB
+	driver string
 }
 
 // SelectBody
@@ -63,7 +64,7 @@ func parseRequest(r *http.Request) (*Request, error) {
 	bytes, _ := ioutil.ReadAll(r.Body)
 
 	if len(parts) == 1 {
-		if action == actionExec {
+		if action == actionExec || action == actionShowTables {
 			return &Request{
 				Action: action,
 				Body:   bytes,
@@ -84,9 +85,18 @@ func parseRequest(r *http.Request) (*Request, error) {
 //	@receiver req
 //	@param db
 //	@return *Request
-func (req *Request) UseDB(db *gorm.DB) *Request {
+func (req *Request) UseDB(db *gorm.DB, driver string) *Request {
 	req.DB = db
+	req.driver = driver
 	return req
+}
+
+// IsSQLite
+//
+//	@receiver req
+//	@return bool
+func (req *Request) IsSQLite() bool {
+	return req.driver == "sqlite"
 }
 
 // Handle
@@ -254,8 +264,15 @@ func (req *Request) Distinct() (interface{}, error) {
 //	@return interface{}
 //	@return error
 func (req *Request) ShowCreateTable() (interface{}, error) {
-	data := map[string]interface{}{}
 
+	data := map[string]interface{}{}
+	if req.IsSQLite() {
+		req.DB.Table("sqlite_master").Where(map[string]interface{}{
+			"type": "table",
+			"name": req.Table,
+		}).Scan(&data)
+		return data["sql"], nil
+	}
 	if err := req.DB.Raw("show create table " + req.Table).Scan(&data).Error; err != nil {
 		return nil, err
 	}
@@ -275,6 +292,12 @@ func (req *Request) ShowCreateTable() (interface{}, error) {
 //	@return error
 func (req *Request) Desc() (interface{}, error) {
 	list := []map[string]interface{}{}
+	if req.IsSQLite() {
+		if err := req.DB.Raw(fmt.Sprintf("PRAGMA TABLE_INFO (%s)", req.Table)).Scan(&list).Error; err != nil {
+			return nil, err
+		}
+		return list, nil
+	}
 
 	if err := req.DB.Raw("desc " + req.Table).Find(&list).Error; err != nil {
 		return nil, err
@@ -289,13 +312,26 @@ func (req *Request) Desc() (interface{}, error) {
 //	@return interface{}
 //	@return error
 func (req *Request) ShowTables() (interface{}, error) {
-	data := []map[string]interface{}{}
+	list := []map[string]interface{}{}
+	retData := []string{}
+	if req.IsSQLite() {
+		req.DB.Table("sqlite_master").Where(map[string]interface{}{
+			"type": "table",
+		}).Find(&list)
+		for _, value := range list {
+			for key, value := range value {
+				if key == "name" {
+					retData = append(retData, value.(string))
+				}
 
-	if err := req.DB.Raw("show tables").Scan(&data).Error; err != nil {
+			}
+		}
+		return retData, nil
+	}
+	if err := req.DB.Raw("show tables").Scan(&list).Error; err != nil {
 		return nil, err
 	}
-	retData := []string{}
-	for _, value := range data {
+	for _, value := range list {
 		for _, value := range value {
 			retData = append(retData, value.(string))
 		}

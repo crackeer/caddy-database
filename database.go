@@ -91,7 +91,7 @@ func (u Database) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		response["code"] = -1
 		response["message"] = fmt.Sprintf("parse request error:%s", err.Error())
 	} else {
-		data, err := req.UseDB(u.DB).Handle()
+		data, err := req.UseDB(u.DB, u.Driver).Handle()
 		if err != nil {
 			response["code"] = -2
 			response["message"] = err.Error()
