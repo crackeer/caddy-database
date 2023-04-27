@@ -323,7 +323,6 @@ func (req *Request) ShowTables() (interface{}, error) {
 				if key == "name" {
 					retData = append(retData, value.(string))
 				}
-
 			}
 		}
 		return retData, nil
