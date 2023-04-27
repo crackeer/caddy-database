@@ -18,7 +18,6 @@ const (
 	actionShowCreateTable string = "show_create_table"
 	actionDesc            string = "desc"
 
-	actionCreate string = "create"
 	actionInsert string = "insert"
 	actionUpdate string = "update"
 	actionDelete string = "delete"
@@ -26,6 +25,7 @@ const (
 	actionShowTables string = "show_tables"
 
 	actionDrop string = "drop"
+	actionExec string = "exec"
 )
 
 // Request
@@ -47,11 +47,10 @@ type SelectBody struct {
 	Distinct []string               `json:"distinct"`
 }
 
-// UpdateBody ...
+// UpdateBody
 type UpdateBody struct {
 	Query  map[string]interface{} `json:"query"`
 	Update map[string]interface{} `json:"update"`
-	Limit  int                    `json:"limit"`
 }
 
 func parseRequest(r *http.Request) (*Request, error) {
@@ -61,12 +60,17 @@ func parseRequest(r *http.Request) (*Request, error) {
 	}
 	parts := strings.Split(path, "/")
 	action := parts[0]
-
-	if len(parts) < 2 {
-		return nil, errors.New("nil table")
-	}
-
 	bytes, _ := ioutil.ReadAll(r.Body)
+
+	if len(parts) == 1 {
+		if action == actionExec {
+			return &Request{
+				Action: action,
+				Body:   bytes,
+			}, nil
+		}
+		return nil, errors.New("table nil")
+	}
 
 	return &Request{
 		Action: action,
@@ -114,20 +118,28 @@ func (req *Request) Handle() (interface{}, error) {
 	if req.Action == actionShowTables {
 		return req.ShowTables()
 	}
+
+	if req.Action == actionExec {
+		return req.Exec()
+	}
+
 	if req.Action == actionInsert {
 		return req.Insert()
 	}
+
 	if req.Action == actionUpdate {
 		return req.Update()
 	}
+
 	if req.Action == actionDelete {
 		return req.Delete()
 	}
-	if req.Action == actionCreate {
-		return req.Create()
+
+	if req.Action == actionDrop {
+		return req.Drop()
 	}
 
-	return nil, nil
+	return nil, errors.New("no action match")
 }
 
 func (req *Request) decodeBody(dest interface{}) error {
@@ -292,6 +304,18 @@ func (req *Request) ShowTables() (interface{}, error) {
 	return retData, nil
 }
 
+// Exec
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Exec() (interface{}, error) {
+	if err := req.DB.Exec(string(req.Body)).Error; err != nil {
+		return nil, err
+	}
+	return "ok", nil
+}
+
 // Insert
 //
 //	@receiver req
@@ -306,7 +330,6 @@ func (req *Request) Insert() (interface{}, error) {
 	if err := req.DB.Table(req.Table).Create(&list).Error; err != nil {
 		return nil, err
 	}
-
 	return nil, nil
 }
 
@@ -320,20 +343,18 @@ func (req *Request) Update() (interface{}, error) {
 	if err := req.decodeBody(updateBody); err != nil {
 		return nil, fmt.Errorf("decode update body error:%s", err.Error())
 	}
-	where, params := BuildQuery(updateBody.Query)
-	db := req.DB.Table(req.Table).Where(where, params...).Updates(updateBody.Update)
-	if db.Error != nil {
-		return nil, db.Error
-	}
 
-	return db.RowsAffected, nil
+	sql, params := BuildQuery(updateBody.Query)
+
+	db := req.DB.Table(req.Table).Where(sql, params...).Updates(updateBody.Update)
+	if err := db.Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
 }
 
-// Delete
-//
-//	@receiver req
-//	@return interface{}
-//	@return error
 func (req *Request) Delete() (interface{}, error) {
 	updateBody := &UpdateBody{}
 	if err := req.decodeBody(updateBody); err != nil {
@@ -342,17 +363,26 @@ func (req *Request) Delete() (interface{}, error) {
 
 	where, params := BuildQuery(updateBody.Query)
 	sql := fmt.Sprintf("delete from %s where %s", req.Table, where)
-	return req.DB.Exec(sql, params...).RowsAffected, nil
+	db := req.DB.Exec(sql, params...)
+	if err := db.Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
 }
 
-// Create
+// Drop
 //
 //	@receiver req
 //	@return interface{}
 //	@return error
-func (req *Request) Create() (interface{}, error) {
-	if err := req.DB.Exec(string(req.Body)).Error; err != nil {
+func (req *Request) Drop() (interface{}, error) {
+	db := req.DB.Exec("drop table " + req.Table)
+	if err := db.Error; err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
 }
