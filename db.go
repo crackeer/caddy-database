@@ -18,7 +18,6 @@ const (
 	actionShowCreateTable string = "show_create_table"
 	actionDesc            string = "desc"
 
-	actionCreate string = "create"
 	actionInsert string = "insert"
 	actionUpdate string = "update"
 	actionDelete string = "delete"
@@ -26,6 +25,7 @@ const (
 	actionShowTables string = "show_tables"
 
 	actionDrop string = "drop"
+	actionExec string = "exec"
 )
 
 // Request
@@ -47,6 +47,12 @@ type SelectBody struct {
 	Distinct []string               `json:"distinct"`
 }
 
+// UpdateBody
+type UpdateBody struct {
+	Query  map[string]interface{} `json:"query"`
+	Update map[string]interface{} `json:"update"`
+}
+
 func parseRequest(r *http.Request) (*Request, error) {
 	path := strings.Trim(r.URL.RequestURI(), "/")
 	if len(path) < 1 {
@@ -54,12 +60,17 @@ func parseRequest(r *http.Request) (*Request, error) {
 	}
 	parts := strings.Split(path, "/")
 	action := parts[0]
-
-	if len(parts) < 2 {
-		return nil, errors.New("nil table")
-	}
-
 	bytes, _ := ioutil.ReadAll(r.Body)
+
+	if len(parts) == 1 {
+		if action == actionExec {
+			return &Request{
+				Action: action,
+				Body:   bytes,
+			}, nil
+		}
+		return nil, errors.New("table nil")
+	}
 
 	return &Request{
 		Action: action,
@@ -108,7 +119,27 @@ func (req *Request) Handle() (interface{}, error) {
 		return req.ShowTables()
 	}
 
-	return nil, nil
+	if req.Action == actionExec {
+		return req.Exec()
+	}
+
+	if req.Action == actionInsert {
+		return req.Insert()
+	}
+
+	if req.Action == actionUpdate {
+		return req.Update()
+	}
+
+	if req.Action == actionDelete {
+		return req.Delete()
+	}
+
+	if req.Action == actionDrop {
+		return req.Drop()
+	}
+
+	return nil, errors.New("no action match")
 }
 
 func (req *Request) decodeBody(dest interface{}) error {
@@ -271,4 +302,87 @@ func (req *Request) ShowTables() (interface{}, error) {
 	}
 
 	return retData, nil
+}
+
+// Exec
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Exec() (interface{}, error) {
+	if err := req.DB.Exec(string(req.Body)).Error; err != nil {
+		return nil, err
+	}
+	return "ok", nil
+}
+
+// Insert
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Insert() (interface{}, error) {
+	list := []map[string]interface{}{}
+	if err := req.decodeBody(&list); err != nil {
+		return nil, fmt.Errorf("decode insert body error:%s", err.Error())
+	}
+
+	if err := req.DB.Table(req.Table).Create(&list).Error; err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// Update
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Update() (interface{}, error) {
+	updateBody := &UpdateBody{}
+	if err := req.decodeBody(updateBody); err != nil {
+		return nil, fmt.Errorf("decode update body error:%s", err.Error())
+	}
+
+	sql, params := BuildQuery(updateBody.Query)
+
+	db := req.DB.Table(req.Table).Where(sql, params...).Updates(updateBody.Update)
+	if err := db.Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
+}
+
+func (req *Request) Delete() (interface{}, error) {
+	updateBody := &UpdateBody{}
+	if err := req.decodeBody(updateBody); err != nil {
+		return nil, fmt.Errorf("decode update body error:%s", err.Error())
+	}
+
+	where, params := BuildQuery(updateBody.Query)
+	sql := fmt.Sprintf("delete from %s where %s", req.Table, where)
+	db := req.DB.Exec(sql, params...)
+	if err := db.Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
+}
+
+// Drop
+//
+//	@receiver req
+//	@return interface{}
+//	@return error
+func (req *Request) Drop() (interface{}, error) {
+	db := req.DB.Exec("drop table " + req.Table)
+	if err := db.Error; err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"affected_rows": db.RowsAffected,
+	}, nil
 }
