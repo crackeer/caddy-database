@@ -249,7 +249,7 @@ func (req *Request) Distinct() (interface{}, error) {
 
 	db = db.Distinct(selectBody.Distinct[0])
 
-	list := []interface{}{}
+	list := []string{}
 
 	if err := db.Pluck(selectBody.Distinct[0], &list).Error; err != nil {
 		return nil, fmt.Errorf("count error:%s", err.Error())
