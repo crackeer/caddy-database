@@ -42,7 +42,7 @@ type Request struct {
 type SelectBody struct {
 	Query    map[string]interface{} `json:"query"`
 	Fields   []string               `json:"fields"`
-	OrderBy  []string               `json:"order_by"`
+	OrderBy  string                 `json:"order_by"`
 	Limit    int                    `json:"limit"`
 	Offset   int                    `json:"offset"`
 	Distinct []string               `json:"distinct"`
@@ -249,7 +249,7 @@ func (req *Request) Distinct() (interface{}, error) {
 
 	db = db.Distinct(selectBody.Distinct[0])
 
-	list := []string{}
+	list := []interface{}{}
 
 	if err := db.Pluck(selectBody.Distinct[0], &list).Error; err != nil {
 		return nil, fmt.Errorf("count error:%s", err.Error())
